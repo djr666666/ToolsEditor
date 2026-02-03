@@ -5,3 +5,4 @@
 - localzation 源码魔改 英文 分割 改成 管道符分割（避免策划双引号写如文本）
 - excel 转 utf-8 格式编辑
 - Tdebug 工具
+- steam票据验证
