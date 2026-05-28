@@ -1,4 +1,4 @@
-﻿using BBG.Network;
+using BBG.Network;
 using Protocol;
 using Steamworks;
 using System;
@@ -24,8 +24,6 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
         InverificationComplete,//验证完成
         Exiting,//退出
     }
-
-
 
     public class SteamAuthResponse
     {
@@ -53,12 +51,20 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
     private HAuthTicket currentTicket = HAuthTicket.Invalid; //初始化无效票据
     private Callback<GetAuthSessionTicketResponse_t> m_GetAuthSessionTicketResponse; //监听
 
+    //--------------------------------------------------------------------------------------------------顶号退游戏
+
+    private Callback<SteamServersDisconnected_t> m_Disconnected;
+    private Callback<IPCFailure_t> m_IPCFailure;
+
+    private float _checkTimer = 0f;
+
+
 
     public bool debugMode = true;//调试
     public float requestTimeout = 10f;
     //public string gameSever = $"ws://-----------/ws"; //后端服务器网址
-    public string backendBaseUrl = "http://106.14.73.35:8080";
-    public string authenticateEndpoint = "/api/steam/user-auth/authenticate-ticket"; //STEAM
+    private string backendBaseUrl = "http://106.14.73.35:8080";
+    public string  authenticateEndpoint = "/api/steam/user-auth/authenticate-ticket"; //STEAM
 
     public class AuthTicketRequest
     {
@@ -79,6 +85,10 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
     {
         Debug.Log($"steam  登录系统运行模式：{curMode}");
         DontDestroyOnLoad(gameObject);
+
+
+
+
 
         InitializeSteam();
     }
@@ -232,6 +242,17 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
         {
             SteamAPI.RunCallbacks();
         }
+
+        // 每 5 秒主动检查一次 Steam 是否还在运行
+        _checkTimer += Time.deltaTime;
+        if (_checkTimer >= 5f)
+        {
+            _checkTimer = 0f;
+            if (curMode == LoginMode.Steam && m_bInitialized && !SteamAPI.IsSteamRunning())
+            {
+                QuitGame();
+            }
+        }
     }
 
 
@@ -239,15 +260,17 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
     {
         if (!m_bInitialized) return;
 
-        // 销毁旧的回调（如果有）
         if (m_GetAuthSessionTicketResponse != null)
         {
             m_GetAuthSessionTicketResponse.Unregister();
             m_GetAuthSessionTicketResponse = null;
         }
 
-        // 创建新的回调 - 使用 Create 而不是 CreateGameObject
         m_GetAuthSessionTicketResponse = Callback<GetAuthSessionTicketResponse_t>.Create(OnGetAuthSessionTicketResponse);
+
+        // 顶号检测回调也放这里
+        m_Disconnected = Callback<SteamServersDisconnected_t>.Create(OnSteamDisconnected);
+        m_IPCFailure = Callback<IPCFailure_t>.Create(OnIPCFailure);
 
         Debug.Log("Steam 回调已创建");
     }
@@ -368,7 +391,7 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
             request.SetRequestHeader("Content-Type", "application/json; charset=utf-8");
             request.SetRequestHeader("Accept", "application/json");
             Debug.Log($"发送 Steam 票据验证请求...");
-
+            Debug.LogError("当前访问网址是："+ request.uri);
 
             // 发送请求
             request.timeout = (int)requestTimeout;
@@ -518,9 +541,28 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
     {
         var data = new EncryptedLoginReq();
         data.EncryptedData = PlayerPrefs.GetString("steam_encrypted_token");
+        data.NickName = SteamFriends.GetPersonaName();
 
         NetworkManager.Instance.SendMessage(data, MessageType.MsgTypeEncryptedLogin);
         UIManager.UIP.ShowMask();
     }
 
+    void OnSteamDisconnected(SteamServersDisconnected_t data)
+    {
+        Debug.Log("[Steam] 服务器断开，账号可能被顶");
+        QuitGame();
+    }
+
+    void OnIPCFailure(IPCFailure_t data)
+    {
+        Debug.Log("[Steam] IPC通信失败，Steam客户端异常");
+        QuitGame();
+    }
+
+    void QuitGame()
+    {
+        // 这里可以先弹提示再退出
+        Debug.Log("Steam会话失效，退出游戏");
+        Application.Quit();
+    }
 }
