@@ -25,6 +25,8 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
         Exiting,//退出
     }
 
+
+
     public class SteamAuthResponse
     {
         public int code;
@@ -57,6 +59,10 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
     private Callback<IPCFailure_t> m_IPCFailure;
 
     private float _checkTimer = 0f;
+
+
+
+
 
 
 
@@ -138,24 +144,41 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
             Debug.Log($"Steamworks.NET版本: {Steamworks.Version.SteamworksNETVersion}");
             Debug.Log($"<color=yellow> SteamAPI 初始化成功！用户: {SteamFriends.GetPersonaName()}, ID: {SteamUser.GetSteamID()}</color>");
 
-         
-            // 重要：在初始化成功后立即创建回调
-            CreateCallbacks();
 
-  
+            // 因为steam 网络服务器卡 有的时候验证票据需要5.6分钟 有时候需要十几秒，5.6分钟不符合 逻辑所以拿到名字ID 可以直接走后端登录流程
 
-            var token = PlayerPrefs.GetString("steam_encrypted_token");
-            if (!string.IsNullOrEmpty(token))
-            {
-                StartGame();
-                return;
-            }
-            StartCoroutine(DelayedGetTicket());       
+
+            //step  1：
+            StartGame();
+
+            //step  2;  这个是为了优化登录验证流程
+
+            //// 重要：在初始化成功后立即创建回调
+            //CreateCallbacks();
+            //var token = PlayerPrefs.GetString("steam_encrypted_token");
+            //if (!string.IsNullOrEmpty(token))
+            //{
+            //    StartGame();
+            //    return;
+            //}
+            //StartCoroutine(DelayedGetTicket());
+            
+
         }
         catch (System.Exception e)
         {
             Debug.LogError($"Steam 初始化异常: {e.Message}\n{e.StackTrace}");
         }
+    }
+
+
+    public void OnStartLoading()
+    {
+        var data = new EncryptedLoginReq();
+        data.EncryptedData = SteamUser.GetSteamID().ToString();
+        data.NickName = SteamFriends.GetPersonaName();
+        NetworkManager.Instance.SendMessage(data, MessageType.MsgTypeEncryptedLogin);
+        UIManager.UIP.ShowMask();
     }
 
 
@@ -243,16 +266,16 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
             SteamAPI.RunCallbacks();
         }
 
-        // 每 5 秒主动检查一次 Steam 是否还在运行
-        _checkTimer += Time.deltaTime;
-        if (_checkTimer >= 5f)
-        {
-            _checkTimer = 0f;
-            if (curMode == LoginMode.Steam && m_bInitialized && !SteamAPI.IsSteamRunning())
-            {
-                QuitGame();
-            }
-        }
+        //// 每 5 秒主动检查一次 Steam 是否还在运行
+        //_checkTimer += Time.deltaTime;
+        //if (_checkTimer >= 5f)
+        //{
+        //    _checkTimer = 0f;
+        //    if (curMode == LoginMode.Steam && m_bInitialized && !SteamAPI.IsSteamRunning())
+        //    {
+        //        QuitGame();
+        //    }
+        //}
     }
 
 
@@ -274,10 +297,6 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
 
         Debug.Log("Steam 回调已创建");
     }
-
-
-
-
 
 
 
@@ -537,26 +556,25 @@ public class SteamCenterManager : MonoSingleton<SteamCenterManager>
         return "未找到无效字符";
     }
 
-    public void OnStartLoading()
-    {
-        var data = new EncryptedLoginReq();
-        data.EncryptedData = PlayerPrefs.GetString("steam_encrypted_token");
-        data.NickName = SteamFriends.GetPersonaName();
 
-        NetworkManager.Instance.SendMessage(data, MessageType.MsgTypeEncryptedLogin);
-        UIManager.UIP.ShowMask();
-    }
+
+
+    //为什么不需要   跟账号、游戏逻辑、内存全没关系，就是网络抖动 + 代码太激进。
+    //    QA 网络抖了一下 / Steam 客户端后台卡了一下
+    //        ↓
+    //SteamServersDisconnected_t 回调触发
+    //        ↓
+    //OnSteamDisconnected() → QuitGame() → Application.Quit()
+    //        ↓
+    //游戏直接没了，QA 以为自己闪退了
+    //Update() 5秒那个也删了
 
     void OnSteamDisconnected(SteamServersDisconnected_t data)
-    {
-        Debug.Log("[Steam] 服务器断开，账号可能被顶");
-        QuitGame();
+    {   
     }
 
     void OnIPCFailure(IPCFailure_t data)
-    {
-        Debug.Log("[Steam] IPC通信失败，Steam客户端异常");
-        QuitGame();
+    {  
     }
 
     void QuitGame()
