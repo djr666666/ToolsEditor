@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEditor;
 using System.IO;
 using System.Text;
@@ -179,6 +179,9 @@ public class CustomCsvTool : EditorWindow
             Undo.RecordObject(table, "Import Custom CSV");
 
         int count = 0;
+        List<string> newKeys = new List<string>();   // ★ 记录本次新增的 Key
+        List<string> changedKeys = new List<string>();  // ★ 记录本次内容改变的 Key
+
         for (int i = 1; i < lines.Length; i++)
         {
             if (string.IsNullOrWhiteSpace(lines[i])) continue;
@@ -188,7 +191,12 @@ public class CustomCsvTool : EditorWindow
             string key = fields[0].Trim();
             if (string.IsNullOrEmpty(key)) continue;
 
-            var entry = collection.SharedData.GetEntry(key) ?? collection.SharedData.AddKey(key);
+            var entry = collection.SharedData.GetEntry(key);
+            bool isNew = entry == null;
+            if (isNew) entry = collection.SharedData.AddKey(key);
+
+            var newContentParts = isNew ? new List<string>() : null;
+            var changedParts = isNew ? null : new List<string>();   // ★ 只有更新才收集"改变"
 
             foreach (var kv in localeIndices)
             {
@@ -198,30 +206,58 @@ public class CustomCsvTool : EditorWindow
 
                 string rawText = fields[kv.Value];
 
-                // 手动去掉 Excel 添加的包裹引号（如果存在）
                 if (rawText.Length >= 2 && rawText.StartsWith("\"") && rawText.EndsWith("\""))
-                {
                     rawText = rawText.Substring(1, rawText.Length - 2);
-                }
 
-                // 手动把转义的双引号 "" 还原为单个 "
                 string finalText = rawText.Replace("\"\"", "\"");
 
                 var tableEntry = table.GetEntry(entry.Id);
-
                 if (tableEntry == null)
+                {
                     table.AddEntry(entry.Id, finalText);
+                    // ★ 已有 Key 但该语言原先没翻译：从「空」变为有内容，也算改变
+                    if (!isNew && !string.IsNullOrEmpty(finalText))
+                        changedParts.Add($"[{kv.Key}] (空) => {finalText}");
+                }
                 else
+                {
+                    string oldText = tableEntry.Value ?? "";
+                    // ★ 旧值 != 新值，记录这条改变
+                    if (!isNew && oldText != finalText)
+                        changedParts.Add($"[{kv.Key}] {oldText} => {finalText}");
                     tableEntry.Value = finalText;
+                }
 
                 EditorUtility.SetDirty(table);
+
+                if (isNew) newContentParts.Add($"{kv.Key}={finalText}");
             }
+
+            if (isNew)
+                newKeys.Add($"{key}  ->  {string.Join(" | ", newContentParts)}");
+            else if (changedParts.Count > 0)                        // ★ 已有 Key 且内容确实变了
+                changedKeys.Add($"{key}\n    {string.Join("\n    ", changedParts)}");
+
             count++;
         }
 
         EditorUtility.SetDirty(collection.SharedData);
         AssetDatabase.SaveAssets();
-        Debug.Log($"✅ 导入成功，共处理 {count} 行数据。");
+
+        int newCount = newKeys.Count;
+        int changedCount = changedKeys.Count;                   // ★ 内容有改动的
+        int unchangedCount = count - newCount - changedCount;   // ★ 已有且无改动的
+
+        Debug.Log($"✅ 导入完成：共处理 {count} 行 ｜ 新增 {newCount} 个 ｜ 修改 {changedCount} 个 ｜ 无变化 {unchangedCount} 个");
+
+        if (newCount > 0)
+            Debug.Log($"🆕 新增的 {newCount} 个 Key：\n{string.Join("\n", newKeys)}");
+
+        if (changedCount > 0)
+            Debug.Log($"✏️ 修改的 {changedCount} 个 Key：\n{string.Join("\n", changedKeys)}");
+
+        if (newCount == 0 && changedCount == 0)
+            Debug.Log("ℹ️ 本次没有任何新增或修改（内容全部一致）。");
     }
 
     private static string EscapeField(string field)
