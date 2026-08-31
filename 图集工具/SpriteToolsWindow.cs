@@ -125,6 +125,20 @@ namespace SpriteTools
         bool _stylesReady;
         GUIStyle _titleStyle, _subStyle, _dropStyle, _dropHoverStyle, _tipStyle, _logStyle, _linkStyle, _previewHintStyle;
 
+        // EditorPrefs 持久化
+        const string kPrefAtlasTablePath = "SpriteTools_AtlasTablePath";
+        const string kPrefAtlasEnumName = "SpriteTools_AtlasEnumName";
+        const string kPrefSliceAutoRegister = "SpriteTools_SliceAutoRegister";
+
+        void OnEnable()
+        {
+            string saved = EditorPrefs.GetString(kPrefAtlasTablePath, "");
+            if (!string.IsNullOrEmpty(saved)) SpriteToolsCore.AtlasTablePath = saved;
+            string savedEnum = EditorPrefs.GetString(kPrefAtlasEnumName, "");
+            if (!string.IsNullOrEmpty(savedEnum)) SpriteToolsCore.AtlasEnumName = savedEnum;
+            _sliceAutoRegister = EditorPrefs.GetBool(kPrefSliceAutoRegister, true);
+        }
+
         [MenuItem("Tools/Sprite 工具箱", priority = 2000)]
         static void Open()
         {
@@ -281,7 +295,50 @@ namespace SpriteTools
         void DrawSliceTab()
         {
             DropAndList(_sliceItems, "把 TexturePacker 的 .json 文件（或其所在文件夹）拖到这里");
+
+            bool prevAuto = _sliceAutoRegister;
             _sliceAutoRegister = EditorGUILayout.ToggleLeft("切图完成后自动登记进图集表（AtlasName）", _sliceAutoRegister);
+            if (_sliceAutoRegister != prevAuto) EditorPrefs.SetBool(kPrefSliceAutoRegister, _sliceAutoRegister);
+
+            if (_sliceAutoRegister)
+            {
+                bool tableExists = File.Exists(SpriteToolsCore.AtlasTablePath);
+                string curScriptName = Path.GetFileNameWithoutExtension(SpriteToolsCore.AtlasTablePath);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField("脚本名称", GUILayout.Width(56));
+                    string newName = EditorGUILayout.TextField(curScriptName);
+                    EditorGUILayout.LabelField(".cs", GUILayout.Width(24));
+                    if (newName != curScriptName)
+                    {
+                        string dir = Path.GetDirectoryName(SpriteToolsCore.AtlasTablePath);
+                        SpriteToolsCore.AtlasTablePath = Path.Combine(string.IsNullOrEmpty(dir) ? "Assets" : dir, newName + ".cs").Replace('\\', '/');
+                        EditorPrefs.SetString(kPrefAtlasTablePath, SpriteToolsCore.AtlasTablePath);
+                    }
+                }
+                if (!IsValidScriptName(curScriptName))
+                    EditorGUILayout.LabelField("⚠ 名称须为合法标识符（字母或下划线开头，仅含字母/数字/下划线）", _tipStyle);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField("生成路径", GUILayout.Width(56));
+                    string newPath = EditorGUILayout.TextField(SpriteToolsCore.AtlasTablePath);
+                    if (newPath != SpriteToolsCore.AtlasTablePath) { SpriteToolsCore.AtlasTablePath = newPath; EditorPrefs.SetString(kPrefAtlasTablePath, newPath); }
+                    if (GUILayout.Button("选择…", GUILayout.Width(52))) PicAtlasTablePath();
+                }
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField("枚举名称", GUILayout.Width(56));
+                    string newEnum = EditorGUILayout.TextField(SpriteToolsCore.AtlasEnumName);
+                    if (newEnum != SpriteToolsCore.AtlasEnumName) { SpriteToolsCore.AtlasEnumName = newEnum; EditorPrefs.SetString(kPrefAtlasEnumName, newEnum); }
+                }
+                string enumHint = string.IsNullOrEmpty(SpriteToolsCore.AtlasEnumName) ? "AtlasName" : SpriteToolsCore.AtlasEnumName;
+                EditorGUILayout.LabelField(
+                    tableExists
+                        ? $"✓ 已就绪（枚举 {enumHint}），切图后自动更新"
+                        : $"尚未创建，切图时自动生成枚举 {enumHint} 到上方路径",
+                    _tipStyle);
+                EditorGUILayout.LabelField("首次使用会自动生成脚本；配置完成后请勿随意修改，避免已有代码引用失效。", _tipStyle);
+            }
 
             if (RunButton("开始切图", new Color(0.30f, 0.62f, 0.95f)))
             {
@@ -393,13 +450,36 @@ namespace SpriteTools
         void DrawTableTab()
         {
             DropAndList(_tableItems, "把图集 PNG（或它的 .json）拖到这里");
+            string curScriptName = Path.GetFileNameWithoutExtension(SpriteToolsCore.AtlasTablePath);
             using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField("生成文件", GUILayout.Width(56));
-                SpriteToolsCore.AtlasTablePath = EditorGUILayout.TextField(SpriteToolsCore.AtlasTablePath);
+                EditorGUILayout.LabelField("脚本名称", GUILayout.Width(56));
+                string newName = EditorGUILayout.TextField(curScriptName);
+                EditorGUILayout.LabelField(".cs", GUILayout.Width(24));
+                if (newName != curScriptName)
+                {
+                    string dir = Path.GetDirectoryName(SpriteToolsCore.AtlasTablePath);
+                    SpriteToolsCore.AtlasTablePath = Path.Combine(string.IsNullOrEmpty(dir) ? "Assets" : dir, newName + ".cs").Replace('\\', '/');
+                    EditorPrefs.SetString(kPrefAtlasTablePath, SpriteToolsCore.AtlasTablePath);
+                }
+            }
+            if (!IsValidScriptName(curScriptName))
+                EditorGUILayout.LabelField("⚠ 名称须为合法标识符（字母或下划线开头，仅含字母/数字/下划线）", _tipStyle);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("生成路径", GUILayout.Width(56));
+                string newPath = EditorGUILayout.TextField(SpriteToolsCore.AtlasTablePath);
+                if (newPath != SpriteToolsCore.AtlasTablePath) { SpriteToolsCore.AtlasTablePath = newPath; EditorPrefs.SetString(kPrefAtlasTablePath, newPath); }
                 if (GUILayout.Button("选择…", GUILayout.Width(52))) PicAtlasTablePath();
             }
-            EditorGUILayout.LabelField("图集表枚举（AtlasName）生成到此 .cs；一般保持默认，换位置须仍在 Assets 内。", _tipStyle);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("枚举名称", GUILayout.Width(56));
+                string newEnum = EditorGUILayout.TextField(SpriteToolsCore.AtlasEnumName);
+                if (newEnum != SpriteToolsCore.AtlasEnumName) { SpriteToolsCore.AtlasEnumName = newEnum; EditorPrefs.SetString(kPrefAtlasEnumName, newEnum); }
+            }
+            string curEnum = string.IsNullOrEmpty(SpriteToolsCore.AtlasEnumName) ? "AtlasName" : SpriteToolsCore.AtlasEnumName;
+            EditorGUILayout.LabelField($"图集表枚举（{curEnum}）生成到此 .cs；留空默认 AtlasName。", _tipStyle);
 
             if (RunButton("注册选中的图集", new Color(0.30f, 0.62f, 0.95f)))
             {
@@ -678,6 +758,15 @@ namespace SpriteTools
             return clicked;
         }
 
+        static bool IsValidScriptName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            if (!char.IsLetter(name[0]) && name[0] != '_') return false;
+            foreach (char c in name)
+                if (!char.IsLetterOrDigit(c) && c != '_') return false;
+            return true;
+        }
+
         void SetStatus(string msg, MessageType kind)
         {
             _status = msg;
@@ -722,10 +811,11 @@ namespace SpriteTools
         void PicAtlasTablePath()
         {
             string dir = Path.GetDirectoryName(SpriteToolsCore.AtlasTablePath);
+            string curName = Path.GetFileNameWithoutExtension(SpriteToolsCore.AtlasTablePath);
             string file = EditorUtility.SaveFilePanelInProject(
-                "选择图集表生成位置", "AtlasTable.g", "cs",
-                "AtlasName 枚举表将生成到此 .cs 文件", string.IsNullOrEmpty(dir) ? "Assets" : dir);
-            if (!string.IsNullOrEmpty(file)) SpriteToolsCore.AtlasTablePath = file;
+                "选择图集表生成位置", string.IsNullOrEmpty(curName) ? "AtlasTable" : curName, "cs",
+                "图集枚举表将生成到此 .cs 文件", string.IsNullOrEmpty(dir) ? "Assets" : dir);
+            if (!string.IsNullOrEmpty(file)) { SpriteToolsCore.AtlasTablePath = file; EditorPrefs.SetString(kPrefAtlasTablePath, file); }
         }
 
         void HandleFolderDrop(Rect rect)
@@ -917,12 +1007,13 @@ namespace SpriteTools
 
         // ================= 可配置默认值（换项目时改这三个即可）=================
         public const string DefaultAtlasRoot = "Assets/Projects/Art/Atlas";
-        public const string DefaultAtlasTablePath = "Assets/Projects/Scripts/GameTools/AtlasTable.g.cs";
+        public const string DefaultAtlasTablePath = "Assets/Projects/Scripts/GameTools/AtlasTable.cs";
         // 子图速查「复制代码」模板：{atlas}=图集名(AtlasName)，{sprite}=子图名
         public const string DefaultCopyTemplate = "GameTools.SetAtlasSprite(image, AtlasName.{atlas}, \"{sprite}\");";
 
         // 图集表生成文件；可在「注册图集表」页手动改位置
         public static string AtlasTablePath = DefaultAtlasTablePath;
+        public static string AtlasEnumName = "AtlasName";
 
         static readonly string[] kImageExts = { ".png", ".tga", ".jpg", ".jpeg", ".psd" };
         static readonly string[] kAtlasImageExts = { ".png", ".tga", ".jpg", ".jpeg", ".psd", ".exr" };
@@ -1551,7 +1642,9 @@ namespace SpriteTools
             var dict = new Dictionary<string, string>();
             if (!File.Exists(AtlasTablePath)) return dict;
             string text = File.ReadAllText(AtlasTablePath);
-            foreach (Match m in Regex.Matches(text, "\\{\\s*AtlasName\\.(\\w+)\\s*,\\s*\"([^\"]+)\"\\s*\\}"))
+            string enumName = string.IsNullOrEmpty(AtlasEnumName) ? "AtlasName" : AtlasEnumName;
+            string pattern = "\\{\\s*" + Regex.Escape(enumName) + "\\.(\\w+)\\s*,\\s*\"([^\"]+)\"\\s*\\}";
+            foreach (Match m in Regex.Matches(text, pattern))
                 dict[m.Groups[1].Value] = m.Groups[2].Value;
             return dict;
         }
@@ -1566,22 +1659,26 @@ namespace SpriteTools
             sb.AppendLine("// </auto-generated>");
             sb.AppendLine("using System.Collections.Generic;");
             sb.AppendLine();
+            string enumName = string.IsNullOrEmpty(AtlasEnumName) ? "AtlasName" : AtlasEnumName;
             sb.AppendLine("/// <summary>图集名枚举（自动生成）</summary>");
-            sb.AppendLine("public enum AtlasName");
+            sb.AppendLine($"public enum {enumName}");
             sb.AppendLine("{");
             foreach (var k in keys) sb.AppendLine($"    {k},");
             sb.AppendLine("}");
             sb.AppendLine();
             sb.AppendLine("public static partial class GameTools");
             sb.AppendLine("{");
-            sb.AppendLine("    static readonly Dictionary<AtlasName, string> _atlasPaths = new Dictionary<AtlasName, string>");
+            sb.AppendLine($"    static readonly Dictionary<{enumName}, string> _atlasPaths = new Dictionary<{enumName}, string>");
             sb.AppendLine("    {");
-            foreach (var k in keys) sb.AppendLine($"        {{ AtlasName.{k}, \"{table[k]}\" }},");
+            foreach (var k in keys) sb.AppendLine($"        {{ {enumName}.{k}, \"{table[k]}\" }},");
             sb.AppendLine("    };");
             sb.AppendLine();
-            sb.AppendLine("    public static string GetAtlasPath(AtlasName atlas)");
+            sb.AppendLine($"    public static string GetAtlasPath({enumName} atlas)");
             sb.AppendLine("        => _atlasPaths.TryGetValue(atlas, out var p) ? p : null;");
             sb.AppendLine("}");
+            string tableDir = Path.GetDirectoryName(AtlasTablePath);
+            if (!string.IsNullOrEmpty(tableDir) && !Directory.Exists(tableDir))
+                Directory.CreateDirectory(tableDir);
             File.WriteAllText(AtlasTablePath, sb.ToString(), new UTF8Encoding(false));
         }
 
